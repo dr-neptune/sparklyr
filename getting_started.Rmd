@@ -1,0 +1,169 @@
+# Getting Started 
+
+```{r}
+library(tidyverse)
+library(sparklyr)
+```
+
+# Install Spark
+
+```{r}
+# spark_install(version = "2.4")
+```
+
+# Connect
+
+```{r}
+sc <- spark_connect(master = "local")
+```
+
+# Using Spark
+
+```{r}
+cars <- copy_to(sc, mtcars)
+```
+
+# Web Interface
+
+```{r}
+spark_web(sc)
+```
+
+- The jobs tab shows the computations ran 
+- The storage tab shows storage. We can see the size in memory and the fraction cached
+- The executors tab provides a view of the cluster resources 
+- The environment tab lists all of the settings for the spark application 
+
+# Analysis
+
+When using Spark from R to analyze data, we can use SQL or dplyr.
+
+```{r}
+# SQL
+library(DBI)
+
+dbGetQuery(sc, "SELECT count(*) FROM mtcars")
+```
+
+In general, we usually start with dplyr, followed by sampling rows and selecting a subset
+
+```{r}
+cars %>%
+    select(hp, mpg) %>%
+    sample_n(100) %>%
+    collect() %>%
+    plot()
+```
+
+# Modeling
+
+```{r}
+lmod <- cars %>% ml_linear_regression(mpg ~ hp)
+```
+
+```{r}
+new_data <- data.frame(hp = 250 + 10 * 1:10)
+
+lmod %>%
+    ml_predict(copy_to(sc, new_data)) %>%
+    transmute(hp = hp, mpg = prediction) %>%
+    full_join(select(cars, hp, mpg)) %>%
+    collect() %>%
+    plot()
+```
+
+# Data
+
+Data is not usually copied into Spark. Instead, it is read from existing data sources, like csv, JSON, JDBC, etc. 
+
+```{r}
+spark_write_csv(cars, "cars.csv")
+```
+
+```{r}
+cars <- spark_read_csv(sc, "cars.csv")
+```
+
+# Extensions
+
+sparklyr.nested helps us manage files that contain nested information.
+
+```{r}
+sparklyr.nested::sdf_nest(cars, hp) %>%
+    group_by(cyl) %>%
+    summarize(data = collect_list(data))
+```
+
+Even though nesting data makes it more difficult to read, it is a requirement when dealing with nested data formats like JSON (using spark_read_json and spark_write_json)
+
+# Distributed R 
+
+For cases when a particular functionality is not available in spark and no extension has been developed, we can consider distributing our own R code across the spark cluster.
+
+This should be used as a last resort
+
+```{r}
+cars %>% spark_apply(~ round(.x))
+```
+
+# Streaming
+
+Streaming data is usually read from Kafka or from distributed storage that receives new data continuously.
+
+Create an input folder to use as the input for this stream
+
+```{r}
+dir.create("input")
+write.csv(mtcars, "input/cars_1.csv", row.names = F)
+```
+
+Define a stream that processes incoming data from the input folder, performs a transformation and pushes to an output folder
+
+```{r}
+stream <- stream_read_csv(sc, "input/") %>%
+    select(mpg, cyl, disp) %>%
+    stream_write_csv("output/")
+```
+
+As soon at the stream of real time data starts, the input folder is processed and turned into a set of new files under the output folder containing the new transformed files. 
+
+```{r}
+dir("output", pattern = ".csv")
+```
+
+We can keep adding files to the input location and Spark will parallelize and process data automatically. 
+
+```{r}
+write.csv(mtcars, "input/cars_2.csv", row.names = F)
+```
+
+```{r}
+dir("output", pattern = ".csv")
+```
+
+We should then stop the stream 
+
+```{r}
+stream_stop(stream)
+```
+
+# Logs 
+
+```{r}
+spark_log(sc)
+```
+
+# Disconnecting
+
+After finishing, we should disconnect 
+
+```{r}
+spark_disconnect(sc)
+```
+
+If multiple spark connections are active, or if the connection sc is no longer available, we can also disconnect all the spark connections with
+
+```{r}
+spark_disconnect_all()
+```
+
