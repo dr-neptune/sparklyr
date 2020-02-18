@@ -14,8 +14,6 @@
         tbl)
 #+end_src
 
-#+RESULTS: round-tbl
-
 :PROPERTIES:
 :header-args: :session sess :results output value table :colnames yes
 :END:

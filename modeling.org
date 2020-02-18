@@ -1,0 +1,268 @@
+* Modeling 
+:PROPERTIES:
+:header-args: :session R-session :results output value table :colnames yes
+:END:
+
+
+#+NAME: round-tbl
+#+BEGIN_SRC emacs-lisp :var tbl="" fmt="%.2f"
+(mapcar (lambda (row)
+          (mapcar (lambda (cell)
+                    (if (numberp cell)
+                        (format fmt cell)
+                      cell))
+                  row))
+        tbl)
+#+end_src
+
+#+RESULTS: round-tbl
+
+** Overview
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+library(tidyverse)
+library(magrittr)
+library(sparklyr)
+library(ggmosaic)
+library(tidyr)
+library(dbplot)
+#+END_SRC
+
+#+RESULTS:
+| x         |
+|-----------|
+| ggmosaic  |
+| magrittr  |
+| dbplot    |
+| sparklyr  |
+| forcats   |
+| stringr   |
+| dplyr     |
+| purrr     |
+| readr     |
+| tidyr     |
+| tibble    |
+| ggplot2   |
+| tidyverse |
+| stats     |
+| graphics  |
+| grDevices |
+| utils     |
+| datasets  |
+| methods   |
+| base      |
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# download okcupid data
+download.file("https://github.com/r-spark/okcupid/raw/master/profiles.csv.zip",
+              "okcupid.zip")
+
+unzip("okcupid.zip", exdir = "data")
+unlink("okcupid.zip")
+#+END_SRC
+
+** Exploratory Data Analysis
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+sc <- spark_connect(master = "local")
+#+END_SRC
+
+Here are some common objectives of EDA:
+
+- Check for data quality; confirm meaning and prevalence of missing values and reconcile statistics against existing controls.
+- Understand univariate relationships between variables 
+- Perform an initial assessment on what variables to include and what transformations need to be done on them 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+okc <- spark_read_csv(sc,
+                      "data/profiles.csv",
+                      escape = "\"",
+                      memory = FALSE,
+                      options = list(multiline = TRUE)) %>%
+    mutate(height = as.numeric(height),
+           income = ifelse(income == "-1", NA, as.numeric(income)),
+           sex = ifelse(is.na(sex), "missing", sex),
+           drinks = ifelse(is.na(drinks), "missing", drinks),
+           drugs = ifelse(is.na(drugs), "missing", drugs),
+           job = ifelse(is.na(job), "missing", job))
+#+END_SRC
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+okc %>% glimpse()
+#+END_SRC
+
+Now we add our response variable as a column and look at its distribution
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+okc %<>% 
+    mutate(not_working = ifelse(job %in% c("student", "unemployed", "retired"), 1, 0))
+#+END_SRC
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+okc %>%
+    group_by(not_working) %>%
+    tally(sort = TRUE)
+#+END_SRC
+
+#+RESULTS:
+| not_working |       n |
+|-------------+---------|
+|         0.0 | 54541.0 |
+|         1.0 |  5405.0 |
+
+Now we can create a cross validation split. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data_splits <- sdf_random_split(okc, training = 0.8, testing = 0.2, seed = 8888)
+
+okc_train <- data_splits$training
+okc_test <- data_splits$testing
+#+END_SRC
+
+and we can quickly look at a distribution of our response variable
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+okc_train %>%
+    group_by(not_working) %>%
+    tally(sort = TRUE) %>%
+    mutate(propn = n / sum(n))
+#+END_SRC
+
+#+RESULTS:
+| not_working |       n | propn |
+|-------------+---------+-------|
+|         0.0 | 43740.0 |   0.9 |
+|         1.0 |  4376.0 |   0.1 |
+
+
+Using sdf_describe we can obtain numerical summaries of specific columns
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+okc_train %>%
+    sdf_describe(cols = c("age", "income"))
+#+END_SRC
+
+#+RESULTS:
+| summary |     age |    income |
+|---------+---------+-----------|
+| count   | 48116.0 |    9203.0 |
+| mean    |    32.3 |  103300.0 |
+| stddev  |     9.4 |  199969.4 |
+| min     |    18.0 |   20000.0 |
+| max     |   109.0 | 1000000.0 |
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+dbplot_histogram(okc_train, age)
+#+END_SRC
+
+A common EDA exercise is to look at the relationships between the response and the individual predictors. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(okc_train %>%
+    mutate(religion = regexp_extract(religion, "^\\\\w+", 0)) %>%
+    group_by(religion, not_working) %>%
+    tally(sort = TRUE) %>%
+    group_by(religion) %>%
+    summarise(count = sum(n),
+              propn = sum(not_working * n) / sum(n)) %>%
+    mutate(se = sqrt(propn * (1 - propn) / count)) %>%
+    collect() -> prop_data)
+#+END_SRC
+
+#+RESULTS:
+| religion     |    count | propn |   se |
+|--------------+----------+-------+------|
+| atheism      |  5586.00 |  0.12 | 0.00 |
+| christianity |  4661.00 |  0.11 | 0.00 |
+| judaism      |  2500.00 |  0.08 | 0.01 |
+| other        |  6203.00 |  0.09 | 0.00 |
+| hinduism     |   383.00 |  0.10 | 0.02 |
+| nil          | 16231.00 |  0.07 | 0.00 |
+| agnosticism  |  7087.00 |  0.10 | 0.00 |
+| catholicism  |  3825.00 |  0.09 | 0.00 |
+| buddhism     |  1529.00 |  0.09 | 0.01 |
+| islam        |   111.00 |  0.22 | 0.04 |
+
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+prop_data %>%
+    ggplot(aes(x = religion, y = propn)) +
+    geom_point(size = 2) +
+    geom_errorbar(aes(ymin = propn - 1.96 * se,
+                      ymax = propn + 1.96 * se),
+                  width = 0.1) +
+    geom_hline(yintercept = (sum(prop_data$propn * prop_data$count)
+        / sum(prop_data$count)))
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+Next we can look at alcohol and drug use
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(okc_train %>%
+    sdf_crosstab("drinks", "drugs") %>%
+    collect() -> contin_tbl)
+#+END_SRC
+
+#+RESULTS:
+| drinks_drugs | missing |    never |  often | sometimes |
+|--------------+---------+----------+--------+-----------|
+| very often   |   54.00 |   135.00 |  49.00 |    139.00 |
+| socially     | 8186.00 | 21080.00 | 131.00 |   4081.00 |
+| not at all   |  166.00 |  2341.00 |  15.00 |    101.00 |
+| desperately  |   74.00 |    86.00 |  25.00 |     74.00 |
+| often        | 1090.00 |  1731.00 |  69.00 |   1289.00 |
+| missing      | 1118.00 |  1215.00 |   9.00 |     65.00 |
+| rarely       |  606.00 |  3708.00 |  40.00 |    439.00 |
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+contin_tbl %>%
+    rename(drinks = "drinks_drugs") %>%
+    gather("drugs", "count", missing:sometimes) %>%
+    mutate(drinks = as.factor(drinks) %>%
+               fct_relevel("missing", "not at all",
+                           "rarely", "socially",
+                           "very often", "desperately"),
+           drugs = as.factor(drugs) %>%
+               fct_relevel("missing", "never",
+                           "sometimes", "often")) %>%
+    ggplot() +
+    geom_mosaic(aes(x = product(drinks, drugs),
+                    fill = drinks,
+                    weight = count))
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+To further explore the relationship between these two variables, we can perform correspondence analysis. This allows us to summarize the relationship between the high dimensional factor levels by mapping each level to a point on the plane. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+# obtain a mapping
+contin_tbl %>%
+    column_to_rownames(var = "drinks_drugs") %>%
+    FactoMineR::CA(graph = FALSE) -> dd_obj
+
+dd_obj$row$coord %>%
+    as.data.frame() %>%
+    mutate(label = gsub("_", " ", rownames(dd_obj$row$coord)),
+           Variable = "Drugs") -> dd_drugs
+
+dd_obj$col$coord %>%
+    as.data.frame() %>%
+    mutate(label = gsub("_", " ", rownames(dd_obj$col$coord)),
+           Variable = "Alcohol") -> dd_drinks
+
+rbind(dd_drugs, dd_drinks) %>%
+    ggplot(aes(x = `Dim 1`, y = `Dim 2`,
+               col = Variable)) +
+    geom_vline(xintercept = 0, lty = 2, alpha = 0.5) +
+    geom_hline(yintercept = 0, lty = 2, alpha = 0.5) +
+    geom_text(aes(label = label)) +
+    coord_equal()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
