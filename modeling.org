@@ -266,3 +266,345 @@ rbind(dd_drugs, dd_drinks) %>%
 
 #+RESULTS:
 [[file:plot.svg]]
+
+** Feature Engineering
+
+Scale values
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*) 
+okc_train %>%
+    summarise(mean_age = mean(age),
+              sd_age = sd(age)) %>%
+    collect() -> scale_values
+#+END_SRC
+
+#+RESULTS:
+| mean_age | sd_age |
+|----------+--------|
+|    32.29 |   9.44 |
+
+Now we can use these to transform the dataset 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+okc_train %<>%
+    mutate(scaled_age = (age - !!scale_values$mean_age) / !!scale_values$sd_age)
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+okc_train %>%
+    ggplot(aes(x = scaled_age)) +
+    geom_histogram()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+Since some of the profile features are multiple select, we need to process them before we can build models. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+okc_train %>%
+    group_by(ethnicity) %>%
+    tally(sort = TRUE)
+#+END_SRC
+
+#+RESULTS:
+| ethnicity                                                                                               |        n |
+|---------------------------------------------------------------------------------------------------------+----------|
+| white                                                                                                   | 26385.00 |
+| asian                                                                                                   |  4930.00 |
+| nil                                                                                                     |  4520.00 |
+| hispanic / latin                                                                                        |  2257.00 |
+| black                                                                                                   |  1624.00 |
+| other                                                                                                   |  1345.00 |
+| hispanic / latin, white                                                                                 |  1049.00 |
+| indian                                                                                                  |   899.00 |
+| asian, white                                                                                            |   655.00 |
+| white, other                                                                                            |   504.00 |
+| pacific islander                                                                                        |   354.00 |
+| asian, pacific islander                                                                                 |   332.00 |
+| native american, white                                                                                  |   269.00 |
+| middle eastern                                                                                          |   250.00 |
+| black, white                                                                                            |   236.00 |
+| middle eastern, white                                                                                   |   235.00 |
+| pacific islander, white                                                                                 |   124.00 |
+| hispanic / latin, other                                                                                 |   114.00 |
+| black, other                                                                                            |   104.00 |
+| black, hispanic / latin                                                                                 |    99.00 |
+| black, native american, white                                                                           |    94.00 |
+| hispanic / latin, white, other                                                                          |    91.00 |
+| black, native american                                                                                  |    81.00 |
+| asian, hispanic / latin                                                                                 |    72.00 |
+| asian, other                                                                                            |    70.00 |
+| native american, hispanic / latin                                                                       |    67.00 |
+| native american, hispanic / latin, white                                                                |    65.00 |
+| asian, white, other                                                                                     |    55.00 |
+| native american                                                                                         |    54.00 |
+| asian, middle eastern, black, native american, indian, pacific islander, hispanic / latin, white, other |    51.00 |
+| asian, black                                                                                            |    50.00 |
+| pacific islander, hispanic / latin                                                                      |    48.00 |
+| native american, white, other                                                                           |    44.00 |
+| asian, pacific islander, white                                                                          |    42.00 |
+| asian, indian                                                                                           |    39.00 |
+| indian, white                                                                                           |    38.00 |
+| black, white, other                                                                                     |    38.00 |
+| middle eastern, hispanic / latin                                                                        |    32.00 |
+| middle eastern, white, other                                                                            |    31.00 |
+| black, hispanic / latin, white                                                                          |    30.00 |
+| asian, pacific islander, other                                                                          |    30.00 |
+| asian, hispanic / latin, white                                                                          |    30.00 |
+| pacific islander, hispanic / latin, white                                                               |    26.00 |
+| black, native american, white, other                                                                    |    24.00 |
+| native american, hispanic / latin, white, other                                                         |    22.00 |
+| indian, other                                                                                           |    19.00 |
+| black, native american, hispanic / latin, white                                                         |    19.00 |
+| black, native american, other                                                                           |    19.00 |
+| middle eastern, other                                                                                   |    18.00 |
+| black, native american, hispanic / latin                                                                |    18.00 |
+| pacific islander, white, other                                                                          |    16.00 |
+| asian, native american, white                                                                           |    16.00 |
+| asian, black, white                                                                                     |    14.00 |
+| black, indian                                                                                           |    14.00 |
+| native american, other                                                                                  |    13.00 |
+| black, pacific islander                                                                                 |    13.00 |
+| pacific islander, other                                                                                 |    12.00 |
+| black, hispanic / latin, other                                                                          |    11.00 |
+| indian, white, other                                                                                    |    10.00 |
+| native american, hispanic / latin, other                                                                |    10.00 |
+| asian, pacific islander, white, other                                                                   |     9.00 |
+| indian, pacific islander                                                                                |     9.00 |
+| asian, middle eastern                                                                                   |     9.00 |
+| asian, middle eastern, white                                                                            |     9.00 |
+| asian, pacific islander, hispanic / latin, white                                                        |     9.00 |
+| asian, hispanic / latin, white, other                                                                   |     8.00 |
+| asian, black, other                                                                                     |     8.00 |
+| black, native american, hispanic / latin, white, other                                                  |     8.00 |
+| asian, middle eastern, black, native american, indian, pacific islander, hispanic / latin, white        |     8.00 |
+| middle eastern, hispanic / latin, white                                                                 |     7.00 |
+| asian, hispanic / latin, other                                                                          |     7.00 |
+| asian, pacific islander, hispanic / latin                                                               |     7.00 |
+| asian, black, native american                                                                           |     7.00 |
+| middle eastern, native american, white                                                                  |     6.00 |
+| middle eastern, indian                                                                                  |     6.00 |
+| asian, native american, hispanic / latin, white                                                         |     6.00 |
+| native american, pacific islander, hispanic / latin, white                                              |     5.00 |
+| pacific islander, hispanic / latin, other                                                               |     5.00 |
+| asian, pacific islander, hispanic / latin, white, other                                                 |     5.00 |
+| asian, middle eastern, white, other                                                                     |     5.00 |
+| native american, pacific islander, white                                                                |     5.00 |
+| black, pacific islander, hispanic / latin                                                               |     5.00 |
+| black, native american, hispanic / latin, other                                                         |     5.00 |
+| asian, middle eastern, indian                                                                           |     5.00 |
+| asian, native american, white, other                                                                    |     5.00 |
+| indian, hispanic / latin                                                                                |     5.00 |
+| asian, indian, white                                                                                    |     4.00 |
+| asian, indian, pacific islander                                                                         |     4.00 |
+| black, indian, white                                                                                    |     4.00 |
+| middle eastern, black                                                                                   |     4.00 |
+| black, pacific islander, white                                                                          |     4.00 |
+| pacific islander, hispanic / latin, white, other                                                        |     4.00 |
+| asian, indian, other                                                                                    |     4.00 |
+| asian, black, native american, white                                                                    |     4.00 |
+| asian, black, pacific islander                                                                          |     4.00 |
+| black, indian, white, other                                                                             |     4.00 |
+| black, hispanic / latin, white, other                                                                   |     4.00 |
+| middle eastern, pacific islander, other                                                                 |     3.00 |
+| middle eastern, indian, other                                                                           |     3.00 |
+| middle eastern, hispanic / latin, other                                                                 |     3.00 |
+| asian, indian, pacific islander, other                                                                  |     3.00 |
+| native american, pacific islander, hispanic / latin                                                     |     3.00 |
+| asian, black, native american, pacific islander, white                                                  |     3.00 |
+| asian, native american, hispanic / latin, white, other                                                  |     3.00 |
+| asian, black, pacific islander, hispanic / latin                                                        |     3.00 |
+| indian, hispanic / latin, other                                                                         |     3.00 |
+| asian, native american, hispanic / latin                                                                |     3.00 |
+| asian, middle eastern, indian, other                                                                    |     3.00 |
+| asian, black, native american, hispanic / latin                                                         |     2.00 |
+| asian, native american                                                                                  |     2.00 |
+| asian, indian, hispanic / latin                                                                         |     2.00 |
+| black, native american, pacific islander, hispanic / latin, white                                       |     2.00 |
+| asian, black, hispanic / latin, other                                                                   |     2.00 |
+| black, indian, hispanic / latin                                                                         |     2.00 |
+| native american, pacific islander, white, other                                                         |     2.00 |
+| asian, black, pacific islander, white                                                                   |     2.00 |
+| middle eastern, native american, hispanic / latin, white, other                                         |     2.00 |
+| asian, black, native american, white, other                                                             |     2.00 |
+| black, indian, other                                                                                    |     2.00 |
+| asian, black, native american, pacific islander                                                         |     2.00 |
+| asian, middle eastern, native american, indian, pacific islander, hispanic / latin, white               |     2.00 |
+| black, pacific islander, other                                                                          |     2.00 |
+| native american, pacific islander                                                                       |     2.00 |
+| asian, native american, pacific islander, hispanic / latin, white                                       |     2.00 |
+| asian, middle eastern, black, native american, pacific islander, hispanic / latin, white, other         |     2.00 |
+| middle eastern, hispanic / latin, white, other                                                          |     2.00 |
+| asian, native american, pacific islander, white                                                         |     2.00 |
+| native american, indian                                                                                 |     2.00 |
+| middle eastern, native american, hispanic / latin                                                       |     2.00 |
+| middle eastern, black, native american, white                                                           |     2.00 |
+| asian, native american, pacific islander                                                                |     2.00 |
+| middle eastern, native american, hispanic / latin, white                                                |     2.00 |
+| black, native american, pacific islander, hispanic / latin, white, other                                |     2.00 |
+| asian, native american, pacific islander, white, other                                                  |     2.00 |
+| asian, indian, white, other                                                                             |     2.00 |
+| middle eastern, indian, white, other                                                                    |     2.00 |
+| asian, middle eastern, hispanic / latin, white                                                          |     2.00 |
+| middle eastern, black, native american, indian, white, other                                            |     2.00 |
+| asian, black, hispanic / latin, white                                                                   |     2.00 |
+| asian, middle eastern, black                                                                            |     2.00 |
+| black, indian, hispanic / latin, white                                                                  |     2.00 |
+| asian, middle eastern, black, native american, indian, pacific islander, hispanic / latin, other        |     2.00 |
+| asian, pacific islander, hispanic / latin, other                                                        |     2.00 |
+| asian, middle eastern, black, pacific islander, hispanic / latin, white                                 |     2.00 |
+| asian, black, native american, other                                                                    |     2.00 |
+| native american, pacific islander, hispanic / latin, white, other                                       |     2.00 |
+| black, native american, pacific islander, white                                                         |     1.00 |
+| indian, hispanic / latin, white                                                                         |     1.00 |
+| black, native american, pacific islander                                                                |     1.00 |
+| middle eastern, black, indian, pacific islander, hispanic / latin, white                                |     1.00 |
+| asian, black, native american, indian                                                                   |     1.00 |
+| asian, native american, hispanic / latin, other                                                         |     1.00 |
+| black, native american, indian, other                                                                   |     1.00 |
+| asian, middle eastern, black, native american, hispanic / latin, white                                  |     1.00 |
+| asian, black, pacific islander, hispanic / latin, white                                                 |     1.00 |
+| asian, middle eastern, black, pacific islander, hispanic / latin                                        |     1.00 |
+| middle eastern, black, hispanic / latin                                                                 |     1.00 |
+| asian, middle eastern, native american, pacific islander, white, other                                  |     1.00 |
+| asian, indian, hispanic / latin, white                                                                  |     1.00 |
+| asian, black, hispanic / latin                                                                          |     1.00 |
+| asian, native american, indian, pacific islander, hispanic / latin, white                               |     1.00 |
+| black, native american, indian, white                                                                   |     1.00 |
+| asian, black, native american, indian, hispanic / latin, white, other                                   |     1.00 |
+| black, native american, indian, pacific islander                                                        |     1.00 |
+| black, native american, pacific islander, other                                                         |     1.00 |
+| middle eastern, native american, white, other                                                           |     1.00 |
+| asian, middle eastern, black, native american, indian, pacific islander, white                          |     1.00 |
+| middle eastern, native american                                                                         |     1.00 |
+| asian, native american, pacific islander, hispanic / latin, white, other                                |     1.00 |
+| asian, black, hispanic / latin, white, other                                                            |     1.00 |
+| black, native american, pacific islander, hispanic / latin                                              |     1.00 |
+| black, native american, pacific islander, white, other                                                  |     1.00 |
+| asian, black, native american, indian, pacific islander, hispanic / latin                               |     1.00 |
+| asian, black, native american, hispanic / latin, white                                                  |     1.00 |
+| asian, middle eastern, native american, pacific islander, hispanic / latin, white, other                |     1.00 |
+| asian, black, indian, hispanic / latin, other                                                           |     1.00 |
+| asian, black, native american, indian, pacific islander, white                                          |     1.00 |
+| asian, black, pacific islander, other                                                                   |     1.00 |
+| middle eastern, pacific islander                                                                        |     1.00 |
+| indian, pacific islander, hispanic / latin, white                                                       |     1.00 |
+| middle eastern, black, native american, indian, pacific islander, hispanic / latin, white               |     1.00 |
+| indian, hispanic / latin, white, other                                                                  |     1.00 |
+| asian, native american, other                                                                           |     1.00 |
+| middle eastern, black, native american, indian                                                          |     1.00 |
+| middle eastern, black, native american, indian, hispanic / latin, white                                 |     1.00 |
+| asian, middle eastern, other                                                                            |     1.00 |
+| asian, black, indian                                                                                    |     1.00 |
+| asian, middle eastern, black, indian, pacific islander, hispanic / latin, white                         |     1.00 |
+| asian, middle eastern, hispanic / latin, white, other                                                   |     1.00 |
+| middle eastern, indian, white                                                                           |     1.00 |
+| middle eastern, black, native american, white, other                                                    |     1.00 |
+| black, native american, indian, pacific islander, hispanic / latin                                      |     1.00 |
+| asian, indian, pacific islander, hispanic / latin, white, other                                         |     1.00 |
+| asian, middle eastern, native american, pacific islander, other                                         |     1.00 |
+| native american, indian, white                                                                          |     1.00 |
+| asian, indian, hispanic / latin, other                                                                  |     1.00 |
+| asian, black, native american, pacific islander, white, other                                           |     1.00 |
+| middle eastern, black, white                                                                            |     1.00 |
+| asian, middle eastern, hispanic / latin                                                                 |     1.00 |
+| asian, middle eastern, native american, hispanic / latin, white                                         |     1.00 |
+| asian, middle eastern, indian, hispanic / latin, white, other                                           |     1.00 |
+| black, native american, indian, white, other                                                            |     1.00 |
+| asian, native american, indian, pacific islander, hispanic / latin, white, other                        |     1.00 |
+| middle eastern, black, native american, indian, pacific islander, hispanic / latin, white, other        |     1.00 |
+| middle eastern, black, native american, hispanic / latin, white                                         |     1.00 |
+
+To better encode this, we can create dummy variables for each race as follows
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+ethnicities <- c("asian", "middle eastern", "black", "native american", "indian", 
+                 "pacific islander", "hispanic / latin", "white", "other")
+
+ethnicities %<>%
+    map(., ~ expr(ifelse(like(ethnicity, !!.x), 1, 0))) %>%
+    set_names(paste0("eth_", gsub("\\s|/", "", ethnicities)))
+
+okc_train %<>%
+    mutate(!!!ethnicities)
+
+okc_train %>%
+    select(starts_with("eth_")) %>%
+    head()
+#+END_SRC
+
+For the free text fields, a straightforward way to extract features is counting the total number of characters.
+
+We will store the train dataset in Spark's memory with compute() to speed up computation
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+okc_train %<>%
+    mutate(essay_length = char_length(paste(!!!syms(paste0("essay", 0:9))))) %>%
+    compute()
+#+END_SRC
+
+#+RESULTS:
+: nil
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+okc_train %>%
+    ggplot(aes(x = essay_length)) +
+    geom_histogram(bins = 100)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+We will use this in Ch 5, so let's save it as a Parquet file (an efficient file format ideal for numeric data)
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+spark_write_parquet(okc_train, "data/okc-train.parquet")
+#+END_SRC
+
+#+RESULTS:
+| x    |
+|------|
+| TRUE |
+
+
+** Supervised Learning
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+vfolds <- sdf_random_split(okc_train,
+                           weights = set_names(rep(0.1, 10),
+                                               paste0("fold", 1:10)),
+                           seed = 8888)
+
+analysis_set <- do.call(rbind, vfolds[2:10])
+assessment_set <- vfolds[[1]]
+#+END_SRC
+
+#+RESULTS:
+: nil
+
+When we scale variables we need to make certain that we don't leak any information from the assessment set to the analysis set, so we calculate the mean and sd on the analysis set only and apply the same transformation to both sets. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+make_scale_age <- function(analysis_data) {
+    scale_values <- analysis_data %>%
+        summarise(mean_age = mean(age),
+                  sd_age = sd(age)) %>%
+        collect()
+
+    function(data) {
+        data %>%
+            mutate(scaled_age = (age - !!scale_values$mean_age) /
+                       !!scale_values$sd_age)}}
+
+scale_age <- make_scale_age(analysis_set)
+train_set <- scale_age(analysis_set)
+validation_set <- scale_age(assessment_set)
+#+END_SRC
+
+#+RESULTS:
+: nil
+
+For brevity, it was only shown how to transform the age variable. In practice we would want to normalize each one of the continuous predictors. 
+
+
