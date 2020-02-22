@@ -1,0 +1,87 @@
+* Pipelines 
+:PROPERTIES:
+:header-args: :session R-session :results value table :colnames yes
+:END:
+
+
+
+#+NAME: round-tbl
+#+BEGIN_SRC emacs-lisp :var tbl="" fmt="%.2f"
+(mapcar (lambda (row)
+          (mapcar (lambda (cell)
+                    (if (numberp cell)
+                        (format fmt cell)
+                      cell))
+                  row))
+        tbl)
+#+end_src
+
+#+RESULTS: round-tbl
+
+** Overview 
+
+The building blocks of pipelines are called transformers and estimators, which are collectively referred to as pipeline stages. 
+
+- A transformer can be used to apply transformations to a data frame and return another data frame
+
+- An estimator can be used to create a transformer given some training data. 
+
+For example, a center and scale estimator can learn the mean and standard deviation of some data and store the statistics in a resulting transformer object; this transformer can then be used to normalize the data that it was trained on and also any new, yet unseen, data. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+library(tidyverse)
+library(sparklyr)
+library(magrittr)
+
+sc <- spark_connect(master = "local")
+#+END_SRC
+
+Here is an example of how to define an estimator:
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(scaler <- ft_standard_scaler(sc,
+                             input_col = "features",
+                             output_col = "features_scaled",
+                             with_mean = TRUE))
+#+END_SRC
+
+We can create some data for which we know the mean and sd and then fit our scaling model to it using the ml_fit function. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+df <- copy_to(sc, data.frame(value = rnorm(100000, mean = 5, sd = 3))) %>%
+    # translate the input to a vector column
+    ft_vector_assembler(input_cols = "value", output_col = "features")
+
+(scaler_model <- ml_fit(scaler, df))
+#+END_SRC
+
+We can then use the transformer to transform a data frame, using the ml_transform function. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+scaler_model %>%
+    ml_transform(df) %>%
+    glimpse()
+#+END_SRC
+
+** Creation 
+
+A pipeline is simply a sequence of transformers and estimators, and a pipeline model is a pipeline that has been trained on data so all of its components have been converted to transformers. 
+
+We can initialize an empty pipeline with ml_pipeline(sc) and append stages to it:
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+ml_pipeline(sc) %>%
+    ft_standard_scaler(input_col = "features",
+                       output_col = "features_scaled",
+                       with_mean = TRUE)
+#+END_SRC
+
+Alternatively, we can pass stages directly to ml_pipeline:
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+ml_pipeline(scaler) %>% ml_fit(df)
+#+END_SRC
+
+Note: As a result of the design of Spark ML, pipelines are always estimator objects, even if they comprise only transformers. This means that if we have a pipeline with only transformers, we still need to call ml_fit on it to obtain a transformer. 
+
+** Use Cases 
