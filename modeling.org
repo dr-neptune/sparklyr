@@ -1,7 +1,8 @@
 * Modeling 
 :PROPERTIES:
-:header-args: :session R-session :results output value table :colnames yes
+:header-args: :session R-session :results value table :colnames yes
 :END:
+
 
 
 #+NAME: round-tbl
@@ -17,6 +18,7 @@
 
 #+RESULTS: round-tbl
 
+
 ** Overview
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
@@ -31,10 +33,10 @@ library(dbplot)
 #+RESULTS:
 | x         |
 |-----------|
-| ggmosaic  |
-| magrittr  |
 | dbplot    |
+| ggmosaic  |
 | sparklyr  |
+| magrittr  |
 | forcats   |
 | stringr   |
 | dplyr     |
@@ -67,6 +69,9 @@ unlink("okcupid.zip")
 sc <- spark_connect(master = "local")
 #+END_SRC
 
+#+RESULTS:
+: nil
+
 Here are some common objectives of EDA:
 
 - Check for data quality; confirm meaning and prevalence of missing values and reconcile statistics against existing controls.
@@ -87,7 +92,10 @@ okc <- spark_read_csv(sc,
            job = ifelse(is.na(job), "missing", job))
 #+END_SRC
 
-#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+#+RESULTS:
+: nil
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*) 
 okc %>% glimpse()
 #+END_SRC
 
@@ -95,7 +103,7 @@ Now we add our response variable as a column and look at its distribution
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
 okc %<>% 
-    mutate(not_working = ifelse(job %in% c("student", "unemployed", "retired"), 1, 0))
+    mutate(not_working = ifelse(job %in% c("student", "unemployed",  "retired"), 1, 0))
 #+END_SRC
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
@@ -105,10 +113,10 @@ okc %>%
 #+END_SRC
 
 #+RESULTS:
-| not_working |       n |
-|-------------+---------|
-|         0.0 | 54541.0 |
-|         1.0 |  5405.0 |
+| not_working |        n |
+|-------------+----------|
+|        0.00 | 54541.00 |
+|        1.00 |  5405.00 |
 
 Now we can create a cross validation split. 
 
@@ -118,6 +126,9 @@ data_splits <- sdf_random_split(okc, training = 0.8, testing = 0.2, seed = 8888)
 okc_train <- data_splits$training
 okc_test <- data_splits$testing
 #+END_SRC
+
+#+RESULTS:
+: nil
 
 and we can quickly look at a distribution of our response variable
 
@@ -129,10 +140,10 @@ okc_train %>%
 #+END_SRC
 
 #+RESULTS:
-| not_working |       n | propn |
-|-------------+---------+-------|
-|         0.0 | 43740.0 |   0.9 |
-|         1.0 |  4376.0 |   0.1 |
+| not_working |        n | propn |
+|-------------+----------+-------|
+|        0.00 | 43740.00 |  0.91 |
+|        1.00 |  4376.00 |  0.09 |
 
 
 Using sdf_describe we can obtain numerical summaries of specific columns
@@ -143,13 +154,13 @@ okc_train %>%
 #+END_SRC
 
 #+RESULTS:
-| summary |     age |    income |
-|---------+---------+-----------|
-| count   | 48116.0 |    9203.0 |
-| mean    |    32.3 |  103300.0 |
-| stddev  |     9.4 |  199969.4 |
-| min     |    18.0 |   20000.0 |
-| max     |   109.0 | 1000000.0 |
+| summary |      age |     income |
+|---------+----------+------------|
+| count   | 48116.00 |    9203.00 |
+| mean    |    32.29 |  103300.01 |
+| stddev  |     9.44 |  199969.43 |
+| min     |    18.00 |   20000.00 |
+| max     |   109.00 | 1000000.00 |
 
 #+BEGIN_SRC R :file plot.svg :results graphics file
 dbplot_histogram(okc_train, age)
@@ -289,6 +300,9 @@ Now we can use these to transform the dataset
 okc_train %<>%
     mutate(scaled_age = (age - !!scale_values$mean_age) / !!scale_values$sd_age)
 #+END_SRC
+
+#+RESULTS:
+: nil
 
 #+BEGIN_SRC R :file plot.svg :results graphics file
 okc_train %>%
@@ -531,8 +545,18 @@ okc_train %<>%
 
 okc_train %>%
     select(starts_with("eth_")) %>%
-    head()
+    head() 
 #+END_SRC
+
+#+RESULTS:
+| eth_asian | eth_middleeastern | eth_black | eth_nativeamerican | eth_indian | eth_pacificislander | eth_hispaniclatin | eth_white | eth_other  |
+|-----------+-------------------+-----------+--------------------+------------+---------------------+-------------------+-----------+-----------|
+| 0.00      | 0.00              | 0.00      | 0.00               | 0.00       | 0.00                | 1.00              | 0.00      | 0.00      |
+| 0.00      | 0.00              | 0.00      | 0.00               | 0.00       | 0.00                | 0.00              | 1.00      | 0.00      |
+| nil       | nil               | nil       | nil                | nil        | nil                 | nil               | nil       | nil       |
+| 0.00      | 0.00              | 0.00      | 0.00               | 1.00       | 0.00                | 0.00              | 0.00      | 0.00      |
+| nil       | nil               | nil       | nil                | nil        | nil                 | nil               | nil       | nil       |
+| nil       | nil               | nil       | nil                | nil        | nil                 | nil               | nil       | nil       |
 
 For the free text fields, a straightforward way to extract features is counting the total number of characters.
 
@@ -567,7 +591,6 @@ spark_write_parquet(okc_train, "data/okc-train.parquet")
 |------|
 | TRUE |
 
-
 ** Supervised Learning
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
@@ -599,7 +622,7 @@ make_scale_age <- function(analysis_data) {
 
 scale_age <- make_scale_age(analysis_set)
 train_set <- scale_age(analysis_set)
-validation_set <- scale_age(assessment_set)
+validation_set <- scale_age(assessment_set) 
 #+END_SRC
 
 #+RESULTS:
@@ -607,4 +630,228 @@ validation_set <- scale_age(assessment_set)
 
 For brevity, it was only shown how to transform the age variable. In practice we would want to normalize each one of the continuous predictors. 
 
+Logistic regression is often a reasonable starting point for binary classification problems. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*) 
+(lr <- ml_logistic_regression(analysis_set,
+                              not_working ~ age + sex + drinks +
+                                 drugs + essay_length))
+#+END_SRC
+
+To obtain a summary of performance metrics on the assessment set, we can use the ml_evaluate function 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*) 
+(validation_summary <- ml_evaluate(lr, assessment_set))
+#+END_SRC
+
+#+RESULTS:
+: nil
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+validation_summary$roc() %>%
+    collect() %>%
+    ggplot(aes(x = FPR, y = TPR)) +
+    geom_line() +
+    geom_abline(lty = 2)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+validation_summary$area_under_roc()
+#+END_SRC
+
+#+RESULTS:
+|    x |
+|------|
+| 0.79 |
+
+
+Note: Spark provides evaluation methods for only generalized linear models (including linear models and logistic regression). 
+
+We can easily repeat the logic we have and apply it to each analysis/assessment split: 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+cv_results <- map_df(1:10, function(v) {
+    analysis_set <- do.call(rbind, vfolds[setdiff(1:10, v)]) %>%
+        compute()
+
+    assessment_set <- vfolds[[v]]
+
+    s <- ml_logistic_regression(analysis_set, not_working ~ age + sex +
+                               drinks + drugs + essay_length)
+
+    ml_evaluate(s, assessment_set) -> results
+
+    (tibble(Resample = paste0("Fold", stringr::str_pad(v, width = 2, pad = "0")),
+           roc_df = list(collect(results$roc())),
+           auc = results$area_under_roc()))})
+#+END_SRC
+
+#+RESULTS:
+: nil
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+unnest(cv_results) %>%
+    ggplot(aes(x = FPR, y = TPR, color = Resample)) +
+    geom_line() +
+    geom_abline(lty = "dashed")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+mean(cv_results$auc)
+#+END_SRC
+
+#+RESULTS:
+|    x |
+|------|
+| 0.77 |
+
+
+*** Generalized Linear Regression 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+glr <- ml_generalized_linear_regression(analysis_set,
+                                        not_working ~ age + sex +
+                                            drinks + drugs,
+                                        family = "binomial")
+
+tidy_glr <- tidy(glr)
+#+END_SRC
+
+#+RESULTS:
+| term              | estimate | std.error | statistic |              p.value |
+|-------------------+----------+-----------+-----------+----------------------|
+| (Intercept)       |     1.76 |      0.28 |      6.34 | 2.23228546758492e-10 |
+| age               |    -0.14 |      0.00 |    -41.22 |                 0.00 |
+| sex_m             |    -0.20 |      0.03 |     -5.73 | 9.92950188738462e-09 |
+| drinks_socially   |     0.19 |      0.23 |      0.83 |                 0.40 |
+| drinks_rarely     |     0.62 |      0.23 |      2.68 |                 0.01 |
+| drinks_often      |    -0.14 |      0.23 |     -0.58 |                 0.56 |
+| drinks_not at all |     0.79 |      0.24 |      3.35 |                 0.00 |
+| drinks_missing    |    -0.42 |      0.24 |     -1.71 |                 0.09 |
+| drinks_very often |     0.22 |      0.28 |      0.78 |                 0.44 |
+| drugs_never       |    -0.18 |      0.16 |     -1.10 |                 0.27 |
+| drugs_missing     |    -0.37 |      0.16 |     -2.27 |                 0.02 |
+| drugs_sometimes   |    -0.06 |      0.16 |     -0.35 |                 0.73 |
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+tidy_glr %>%
+    ggplot(aes(x = term, y = estimate)) +
+    geom_point() +
+    geom_errorbar(aes(ymin = estimate - 1.96 * std.error,
+                      ymax = estimate + 1.96 * std.error,
+                      width = .1)) +
+    coord_flip() +
+    geom_hline(yintercept = 0, lty = 2)
+#+END_SRC
+
+Note: Both ml_logistic_regression and ml_linear_regression support elastic net regularization through the reg_param and elastic_net_param parameters. reg_param corresponds to lambda, whereas elastic_net_param corresponds to alpha. ml_generalized_linear_regression supports only reg_param.
+
+*** Other Models 
+
+To fit a neural network model, we could do the following:
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*) :results value
+nn <- ml_multilayer_perceptron_classifier(analysis_set,
+                               not_working ~ age + sex + drinks +
+                                   drugs + essay_length,
+                               layers = c(12, 64, 64, 2))
+
+predictions <- ml_predict(nn, assessment_set)
+
+ml_binary_classification_evaluator(predictions)
+#+END_SRC
+
+#+RESULTS:
+|    x |
+|------|
+| 0.78 |
+
+** Unsupervised Learning
+
+*** Data Preparation 
+
+Lets look into the freeform text that people enter into their profiles. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+essay_cols <- paste0("essay", 0:9)
+
+(essays <- okc %>%
+     select(!!!essay_cols))
+#+END_SRC
+
+Lets do some cleaning 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+essays %<>%
+    mutate_all(list(~ if_else(. == "missing", "", .))) %>%
+    mutate(essay = paste(!!!syms(essay_cols))) %>% 
+    mutate(words = regexp_replace(essay,
+                                  "\\n|&nbsp;|<[^>]*>|[^A-Za-z|']",
+                                  " "))
+#+END_SRC
+
+#+RESULTS:
+: nil
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+essays %>% select("words") %>% head()
+#+END_SRC
+
+*** Topic Modeling 
+
+Latent Dirichlet Allocation is a type of topic model for identifying abstract topics in a set of documents. LDA posits that each document is a mixture of topics, and each topic is a mixture of words. During training, it attempts to estimate both of these simultaneously. 
+
+Fit the model 
+
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+stop_words <- ml_default_stop_words(sc) %>%
+    c("like", "love", "good", "music", "friends",
+      "people", "life", "time", "things", "food",
+      "really", "also", "movies")
+#+END_SRC
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lda_model <- ml_lda(essays, ~ words,
+                    k = 6,
+                    max_iter = 1,
+                    min_token_length = 4,
+                    stop_words = stop_words,
+                    min_df = 5)
+#+END_SRC
+
+The beta values are the per-topic-per-word probabilities. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(betas <- tidy(lda_model))
+#+END_SRC
+
+#+RESULTS:
+: nil
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+betas %>%
+    group_by(topic) %>%
+    top_n(10, beta) %>%
+    ungroup() %>%
+    arrange(topic, -beta) %>%
+    mutate(term = reorder(term, beta)) %>%
+    ggplot(aes(term, beta, fill = factor(topic))) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~ topic, scales = "free") +
+    coord_flip()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+spark_disconnect(sc)
+#+END_SRC
 
