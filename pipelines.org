@@ -36,6 +36,9 @@ library(magrittr)
 sc <- spark_connect(master = "local")
 #+END_SRC
 
+#+RESULTS:
+: nil
+
 Here is an example of how to define an estimator:
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
@@ -44,6 +47,9 @@ Here is an example of how to define an estimator:
                              output_col = "features_scaled",
                              with_mean = TRUE))
 #+END_SRC
+
+#+RESULTS:
+: nil
 
 We can create some data for which we know the mean and sd and then fit our scaling model to it using the ml_fit function. 
 
@@ -54,6 +60,9 @@ df <- copy_to(sc, data.frame(value = rnorm(100000, mean = 5, sd = 3))) %>%
 
 (scaler_model <- ml_fit(scaler, df))
 #+END_SRC
+
+#+RESULTS:
+: nil
 
 We can then use the transformer to transform a data frame, using the ml_transform function. 
 
@@ -76,12 +85,93 @@ ml_pipeline(sc) %>%
                        with_mean = TRUE)
 #+END_SRC
 
+#+RESULTS:
+: nil
+
 Alternatively, we can pass stages directly to ml_pipeline:
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
 ml_pipeline(scaler) %>% ml_fit(df)
 #+END_SRC
 
+#+RESULTS:
+: nil
+
 Note: As a result of the design of Spark ML, pipelines are always estimator objects, even if they comprise only transformers. This means that if we have a pipeline with only transformers, we still need to call ml_fit on it to obtain a transformer. 
 
 ** Use Cases 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+okc_train <- spark_read_parquet(sc, "data/okc-train.parquet")
+
+okc_train %<>%
+    select(not_working, age, sex, drinks, drugs, essay1:essay9, essay_length)
+#+END_SRC
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+ml_pipeline(sc) %>%
+    # coerce from character to numeric indices
+    ft_string_indexer(input_col = "sex", output_col = "sex_indexed") %>%
+    ft_string_indexer(input_col = "drinks", output_col = "drinks_indexed") %>%
+    ft_string_indexer(input_col = "drugs", output_col = "drugs_indexed") %>%
+    # change numeric input cols into a one hot encoded vector
+    ft_one_hot_encoder_estimator(
+        input_cols = c("sex_indexed", "drinks_indexed", "drugs_indexed"),
+        output_cols = c("sex_encoded", "drinks_encoded", "drugs_encoded")) %>%
+    # concatenate all of the inputs into one output vector
+    ft_vector_assembler(
+        input_cols = c("age", "sex_encoded", "drinks_encoded",
+                       "drugs_encoded", "essay_length"),
+        output_col = "features") %>%
+    # normalize all of the elements
+    ft_standard_scaler(input_col = "features",
+                       output_col = "features_scaled",
+                       with_mean = TRUE) %>%
+    # fit the model
+    ml_logistic_regression(features_col = "features_scaled",
+                           label_col = "not_working") -> pipeline
+#+END_SRC
+
+It is worthwhile to try out each of the intermediate steps on a smaller dataframe while prototyping. After an appropriate transformation for the dataset has been found, we can replace the dataframe with ml_pipeline(sc) and it will allow us to apply that pipeline to any dataframe with the appropriate schema. 
+
+** Hyperparameter Tuning 
+
+We can use ml_cross_validator to perform CV. In this example, we test whether centering the variables improves predictions together with various regularization values for logistic regression. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+ml_cross_validator(sc,
+                   estimator = pipeline,
+                   estimator_param_maps = list(
+                       standard_scaler = list(with_mean = c(TRUE, FALSE)),
+                       logistic_regression = list(
+                           elastic_net_param = c(0.25, 0.75),
+                           reg_param = c(1e-2, 1e-3))),
+                   evaluator =
+                       ml_binary_classification_evaluator(
+                           sc,
+                           label_col = "not_working"),
+                   num_folds = 10) -> cv
+#+END_SRC
+
+In the above cv pipeline we are stating that we wish to 
+
+- try out the standard scaler with both true and false values 
+- try out regularization on the logistic regression by trying out the values 0.25 and 0.75 for alpha and 1e-2 and 1e-3 for lambda. 
+
+This will give rise to 2*2*2 = 8 hyperparameter combinations. 
+
+As with any other estimator, we can fit the cross-validator using ml_fit 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+cv_model <- ml_fit(cv, okc_train)
+#+END_SRC 
+
+and inspect the results 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+ml_validation_metrics(cv_model) %>%
+    arrange(- areaUnderROC)
+#+END_SRC
+
+** Operating Modes 
+
