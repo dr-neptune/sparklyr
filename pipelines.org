@@ -33,7 +33,7 @@ library(tidyverse)
 library(sparklyr)
 library(magrittr)
 
-sc <- spark_connect(master = "local")
+sc <- spark_connect(master = "local", version = "2.3")
 #+END_SRC
 
 #+RESULTS:
@@ -102,7 +102,7 @@ Note: As a result of the design of Spark ML, pipelines are always estimator obje
 ** Use Cases 
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
-okc_train <- spark_read_parquet(sc, "data/okc-train.parquet")
+okc_train <- spark_read_parquet(sc, "data/okc-train_2.parquet")
 
 okc_train %<>%
     select(not_working, age, sex, drinks, drugs, essay1:essay9, essay_length)
@@ -110,14 +110,6 @@ okc_train %<>%
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
 ml_pipeline(sc) %>%
-    # coerce from character to numeric indices
-    ft_string_indexer(input_col = "sex", output_col = "sex_indexed") %>%
-    ft_string_indexer(input_col = "drinks", output_col = "drinks_indexed") %>%
-    ft_string_indexer(input_col = "drugs", output_col = "drugs_indexed") %>%
-    # change numeric input cols into a one hot encoded vector
-    ft_one_hot_encoder_estimator(
-        input_cols = c("sex_indexed", "drinks_indexed", "drugs_indexed"),
-        output_cols = c("sex_encoded", "drinks_encoded", "drugs_encoded")) %>%
     # concatenate all of the inputs into one output vector
     ft_vector_assembler(
         input_cols = c("age", "sex_encoded", "drinks_encoded",
@@ -130,6 +122,17 @@ ml_pipeline(sc) %>%
     # fit the model
     ml_logistic_regression(features_col = "features_scaled",
                            label_col = "not_working") -> pipeline
+
+# it seems the one hot encoder is currently broken in this version of sparklyr when it is used as part of a pipeline and passed to ml_fit. The workaround is to preprocess the dataset and then pass the half processed dataset to the pipeline. 
+okc_train %<>%
+    # coerce from character to numeric indices
+    ft_string_indexer(input_col = "sex", output_col = "sex_indexed") %>%
+    ft_string_indexer(input_col = "drinks", output_col = "drinks_indexed") %>%
+    ft_string_indexer(input_col = "drugs", output_col = "drugs_indexed") %>%
+    # change numeric input cols into a one hot encoded vector
+    ft_one_hot_encoder_estimator(
+        input_cols = c("sex_indexed", "drinks_indexed", "drugs_indexed"),
+        output_cols = c("sex_encoded", "drinks_encoded", "drugs_encoded"))
 #+END_SRC
 
 It is worthwhile to try out each of the intermediate steps on a smaller dataframe while prototyping. After an appropriate transformation for the dataset has been found, we can replace the dataframe with ml_pipeline(sc) and it will allow us to apply that pipeline to any dataframe with the appropriate schema. 
@@ -138,14 +141,14 @@ It is worthwhile to try out each of the intermediate steps on a smaller datafram
 
 We can use ml_cross_validator to perform CV. In this example, we test whether centering the variables improves predictions together with various regularization values for logistic regression. 
 
-#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*) 
 ml_cross_validator(sc,
                    estimator = pipeline,
                    estimator_param_maps = list(
                        standard_scaler = list(with_mean = c(TRUE, FALSE)),
                        logistic_regression = list(
                            elastic_net_param = c(0.25, 0.75),
-                           reg_param = c(1e-2, 1e-3))),
+                           reg_param = c(.01, .001))),
                    evaluator =
                        ml_binary_classification_evaluator(
                            sc,
@@ -163,7 +166,7 @@ This will give rise to 2*2*2 = 8 hyperparameter combinations.
 As with any other estimator, we can fit the cross-validator using ml_fit 
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
-cv_model <- ml_fit(cv, okc_train)
+cv_model <- ml_fit(x = cv, dataset = okc_train)
 #+END_SRC 
 
 and inspect the results 
@@ -174,4 +177,151 @@ ml_validation_metrics(cv_model) %>%
 #+END_SRC
 
 ** Operating Modes 
+
+| First Arg             | Returns                 | Example                                       |
+|-----------------------+-------------------------+-----------------------------------------------|
+| Spark Connection      | Estimator / Transformer | ft_string_indexer(sc)                         |
+| Pipeline              | Pipeline                | ml_pipeline(sc) %>% ft_string_indexer()         |
+| Dataframe, no formula | data frame              | ft_string_indexer(iris, "Species", "indexed") |
+| Dataframe, formula    | sparklyr ML model obj   | ml_logistic_regression(iris, Species ~ .)     |
+
+- If a spark connection is provided, the function returns a transformer or estimator object, which can be utilized directly using ml_fit or ml_transform
+- If a pipeline is provided, the function returns a pipeline object with the stage appended to it
+- If a dataframe is provided to a feature transformer (those with the prefix ft_), or an ML algorithm without also providing a formula, the function instantiates the pipeline stage object, fits it to the data if necessary (if the stage is an estimator), and then transforms the dataframe returning a dataframe
+- If a dataframe and a formula are provided to an ML algorithm that supports the formula interface, sparklyr builds a pipeline model under the hood and returns an ML model object that contains additional metadat information.
+
+
+** Interoperability 
+
+One of the most powerful aspects of pipelines is that they can be serialized to disk and are fully interoperable with other spark APIs such as python or scala. 
+
+To save a pipeline model, call ml_save and provide a path. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+model_dir <- file.path("spark_model")
+ml_save(cv_model$best_model, model_dir, overwrite = TRUE)
+#+END_SRC
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+list.dirs(model_dir, full.names = FALSE)
+#+END_SRC
+
+#+RESULTS:
+| x                                                 |
+|---------------------------------------------------|
+|                                                   |
+| metadata                                          |
+| stages                                            |
+| stages/0_vector_assembler_27ad63939dc7            |
+| stages/0_vector_assembler_27ad63939dc7/metadata   |
+| stages/1_standard_scaler_27ad75ca28de             |
+| stages/1_standard_scaler_27ad75ca28de/data        |
+| stages/1_standard_scaler_27ad75ca28de/metadata    |
+| stages/2_logistic_regression_27add8af6d0          |
+| stages/2_logistic_regression_27add8af6d0/data     |
+| stages/2_logistic_regression_27add8af6d0/metadata |
+
+Keep in mind we should also see a bunch of calls to string_indexer and one_hot_encoder.
+
+We can dive into a couple of the files to see what type of data was saved. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+spark_read_json(sc,
+                file.path(
+                    file.path(dir(file.path(model_dir, "stages"),
+                                  pattern = "1_stand*",
+                                  full.names = TRUE),
+                              "metadata"))) %>%
+    glimpse()
+#+END_SRC
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+spark_read_parquet(sc, file.path(
+                           file.path(dir(file.path(model_dir, "stages"),
+                                         pattern = "2_logistic*",
+                                         full.names = TRUE),
+                                     "data")))
+#+END_SRC
+
+Quite a bit of information is exported. This allows us to recreate the model using ml_load 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+model_reload <- ml_load(sc, model_dir)
+
+# retrieve the logistic regression from this pipeline model
+ml_stage(model_reload, "logistic_regression")
+#+END_SRC
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+spark_disconnect(sc)
+#+END_SRC
+
+** Deployment 
+
+We will look at two usecases, batch processing and real time scoring. Loosely, batch processing implies processing many records at the same time, and that execution time is not important as long as it is reasonable (often minutes to hours). 
+
+Real time processing implies scoring one or a few records at a time, but the latency is crucial (on the scale of < 1 second). 
+
+*** Batch Scoring 
+
+This function will allow us to serve predictions via api
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*) :tangle ~/Documents/exp/sparklyr/batch_scoring.R
+library(sparklyr)
+
+sc <- spark_connect(master = "local", version = "2.3")
+
+spark_model <- ml_load(sc, "spark_model")
+
+#* @post /predict
+score_spark <- function(age, sex, drinks, drugs, essay_length) {
+    new_data <- data.frame(age = age,
+                           sex = sex,
+                           drinks = drinks,
+                           drugs = drugs,
+                           essay_length = essay_length,
+                           stringsAsFactors = FALSE)
+
+    new_data_tbl <- copy_to(sc, new_data, overwrite = TRUE)
+
+    ml_transform(spark_model, new_data_tbl) %>%
+        pull(prediction)
+}
+#+END_SRC
+
+#+RESULTS:
+: nil
+
+This file will allow us to call Rscript batch_driver.R from the command line. It will run a background R process serving the plumber api above. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*) :tangle batch_driver.R
+service <- callr::r_bg(function() {
+    p <- plumber::plumb("batch_scoring.R")
+    p$run(port = 8080)})
+#+END_SRC
+
+We can test if the above worked by calling the api
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+httr::content(httr::POST(
+                        "http://127.0.0.1:8080/predict",
+                        body = '{"age": 42, "sex": "m", "drinks": "not at all", "drugs": "never", "essay_length": 99}'))
+#+END_SRC
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+httr::content(httr::POST(
+  "http://127.0.0.1:8080/predict",
+  body = '{"age": 42, "sex": "m", "drinks": "not at all", 
+           "drugs": "never", "essay_length": 99}'
+))
+#+END_SRC
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+service$interrupt()
+#+END_SRC
+
+If we were to measure the time this operation took, it would be on the order of hundreds of milliseconds, which is insufficient for real time. The main bottleneck is the serialization of the R dataframe to a Spark dataframe and back. It also requires an active Spark session, which is a heavy runtime requirement. 
+
+*** Real Time Scoring 
+
 
