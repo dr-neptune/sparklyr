@@ -36,8 +36,8 @@ library(dbplot)
 |-----------|
 | dbplot    |
 | ggmosaic  |
-| magrittr  |
 | sparklyr  |
+| magrittr  |
 | forcats   |
 | stringr   |
 | dplyr     |
@@ -64,6 +64,11 @@ unzip("okcupid.zip", exdir = "data")
 unlink("okcupid.zip")
 #+END_SRC
 
+#+RESULTS:
+|    x |
+|------|
+| 0.00 |
+
 ** Exploratory Data Analysis
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
@@ -80,25 +85,32 @@ Here are some common objectives of EDA:
 - Perform an initial assessment on what variables to include and what transformations need to be done on them 
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
-okc <- spark_read_csv(sc,
-                      "data/profiles.csv",
-                      escape = "\"",
-                      memory = FALSE,
-                      options = list(multiline = TRUE)) %>%
-    mutate(height = as.numeric(height),
-           income = ifelse(income == "-1", NA, as.numeric(income)),
-           sex = ifelse(is.na(sex), "missing", sex),
-           drinks = ifelse(is.na(drinks), "missing", drinks),
-           drugs = ifelse(is.na(drugs), "missing", drugs),
-           job = ifelse(is.na(job), "missing", job))
+okc <- spark_read_csv(
+    sc, 
+    "data/profiles.csv", 
+    escape = "\"", 
+    memory = FALSE,
+    options = list(multiline = TRUE)) %>%
+    mutate(
+        height = as.numeric(height),
+        income = ifelse(income == "-1", NA, as.numeric(income))) %>%
+    mutate(sex = ifelse(is.na(sex), "missing", sex)) %>%
+    mutate(drinks = ifelse(is.na(drinks), "missing", drinks)) %>%
+    mutate(drugs = ifelse(is.na(drugs), "missing", drugs)) %>%
+    mutate(job = ifelse(is.na(job), "missing", job))
+#+END_SRC
+
+#+RESULTS:
+| x    |
+|------|
+| TRUE |
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+okc %>% glimpse()
 #+END_SRC
 
 #+RESULTS:
 : nil
-
-#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*) 
-okc %>% glimpse()
-#+END_SRC
 
 Now we add our response variable as a column and look at its distribution
 
