@@ -396,3 +396,47 @@ mleap::install_mleap()
 
 To test this model, we can create a new plumber API to expose it. 
 
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*) :tangle mleap_api.R
+library(mleap)
+
+mleap_model <- mleap_load_bundle("mleap_model.zip")
+
+#* @post /predict
+score_spark <- function(age, sex, drinks, drugs, essay_length) {
+    new_data <- data.frame(
+        age = as.double(age),
+        sex = sex,
+        drinks = drinks,
+        drugs = drugs,
+        essay_length = as.double(essay_length),
+        stringsAsFactors = FALSE)
+
+    mleap_transform(mleap_model, new_data)$prediction
+}
+#+END_SRC
+
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*) :tangle batch_driver.R
+service <- callr::r_bg(function() {
+    p <- plumber::plumb("batch_scoring.R")
+    p$run(port = 8000)})
+#+END_SRC
+
+We can test if the above worked by calling the api
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+httr::content(httr::POST(
+                        "http://127.0.0.1:8000/predict",
+                        body = '{"age": 10, "sex": "f", "drinks": "not at all", "drugs": "never", "essay_length": 999900}'))
+#+END_SRC
+
+#+RESULTS:
+|  X0L |
+|------|
+| 0.00 |
+
+If we were to time this operation, we would see that the service now returns predictions in tens of milliseconds. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+service$interrupt()
+#+END_SRC
