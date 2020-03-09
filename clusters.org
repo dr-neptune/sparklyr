@@ -1,0 +1,67 @@
+* Clusters & Connections
+:PROPERTIES:
+:header-args: :session R-session :results output value table :colnames yes
+:END:
+
+#+NAME: round-tbl
+ #+BEGIN_SRC emacs-lisp :var tbl="" fmt="%.1f"
+(mapcar (lambda (row)
+          (mapcar (lambda (cell)
+                    (if (numberp cell)
+                        (format fmt cell)
+                      cell))
+                  row))
+        tbl)
+ #+end_src
+
+** Clusters 
+**** Spark Standalone
+
+  #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# retrieve the spark installation directory
+spark_home <- spark_home_dir()
+
+
+# build paths and classes
+spark_path <- file.path(spark_home, "bin", "spark-class")
+
+# start cluster manager master node
+system2(spark_path, "org.apache.spark.deploy.master.Master",
+        wait = FALSE)
+
+# check out localhost:8080 for UI
+
+# initialize a single worker node
+system2(spark_path, c("org.apache.spark.deploy.worker.Worker",
+                      "spark://spark-master:port",
+                      wait = FALSE))
+
+# once computations are done, stop master and worker nodes
+system("jps")
+system("kill -9 8895")
+  #+END_SRC
+
+**** Livy
+
+Livy is an apache project that provides support to use spark clusters remotely through a web interface. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# check available versions
+livy_available_versions()
+
+# install default livy version 
+livy_install()
+
+# list installed livy services 
+livy_installed_versions()
+
+# start the livy service
+livy_service_start()
+
+# stop the livy service 
+livy_service_stop()
+#+END_SRC
+
+
+** Connections 
+
