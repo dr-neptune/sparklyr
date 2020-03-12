@@ -65,3 +65,90 @@ livy_service_stop()
 
 ** Connections 
 
+*** Overview 
+
+The overall connection architecture for a spark cluster is composed of three types of compute instances:
+
+- the driver node
+- the worker nodes
+- the cluster manager 
+  This is what allows spark to be executed on the cluster
+
+These are just names assigned to machines with specific roles. The actual computation in the driver node is performed by the spark context. This schedules tasks, manages storage, tracks execution status, specifies access configuration settings, cancels jobs, and so on. 
+
+In the worker nodes, the actual computation is performed under a spark executor, which is a spark component tasked with executing subtasks against a specific data partition. 
+
+*** Edge Nodes
+
+Computing clusters are configured to enable high bandwidth and fast network connectivity between nodes. To optimize connectivity, the nodes in the cluster are configured to trust one another and to disable security features. This improves performance, but requires you to enclose all external network communication, making the entire cluster secure as a whole except for a few cluster machines which are carefully configured to accept connections from outside the cluster. These are called edge nodes. 
+
+Before connecting to Spark, it is likely that we need to connect to an edge node. We can do this via ssh, or we could install a web server in an edge node that provides access to run sparklyr from R. 
+
+*** Spark Home
+
+After connecting to an edhe node, we need to find the SPARK_HOME path variable. 
+
+If it is set, this should work 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+Sys.getenv("SPARK_HOME")
+#+END_SRC
+
+Otherwise, it needs to be specified in the connection 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+sc <- spark_connect(master = "<master>",
+                    spark_home = "local/path/to/spark")
+#+END_SRC
+
+*** YARN
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+sc <- spark_connect(master = "yarn")
+#+END_SRC
+
+In cluster mode, the driver node is not required to be the node where R and sparklyr are attached. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+sc <- spark_connect(master = "yarn-cluster")
+#+END_SRC
+
+Cluster mode assumes:
+
+- spark_connect is properly configured 
+- yarn-site.xml is configured 
+- YARN_CONF_DIR environment variable is properly set 
+- if Hadoop is also being used as a file system, we also need the HADOOP_CONF_DIR to be properly configured
+
+*** Tools 
+
+When connecting to a spark cluster remotely, sometimes the provider requires a proxy for thier web apis
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+domain <- "http://ec2-12-345-678-9.us-west-2.compute.amazonaws.com"
+
+config <- spark_config()
+
+config$sparklyr.web.spark <- ~paste0(
+  domain, ":20888/proxy/", invoke(spark_context(sc), "applicationId"))
+
+config$sparklyr.web.yarn <- paste0(domain, ":8088")
+
+sc <- spark_connect(master = "yarn", config = config)
+#+END_SRC
+
+
+*** Troubleshooting 
+
+**** Logging 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# log directly to the console
+sc <- spark_connect(master = "local", log = "console")
+
+# verbose logging 
+sc <- spark_connect(master = "local",
+                    log = "console",
+                    config = list(sparklyr.verbose = TRUE))
+#+END_SRC
+

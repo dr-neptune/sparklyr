@@ -1,0 +1,113 @@
+* Data
+:PROPERTIES:
+:header-args: :session R-session :results output value table :colnames yes
+:END:
+
+#+NAME: round-tbl
+ #+BEGIN_SRC emacs-lisp :var tbl="" fmt="%.1f"
+(mapcar (lambda (row)
+          (mapcar (lambda (cell)
+                    (if (numberp cell)
+                        (format fmt cell)
+                      cell))
+                  row))
+        tbl)
+ #+end_src
+
+** Reading Data 
+
+We will look at several techniques that improve the speed and efficiency of reading data. Each subsection provides ways to take advantage of how spark reads files
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+letters <- data.frame(x = letters,
+                      y = seq_len(length(letters)))
+
+dir.create("data-csv")
+
+write.csv(letters[1:3, ],
+          "data-csv/letters1.csv",
+          row.names = FALSE)
+
+write.csv(letters[1:3, ],
+          "data-csv/letters2.csv",
+          row.names = FALSE)
+
+do.call("rbind",
+        lapply(dir("data-csv",
+                   full.names = TRUE),
+               read.csv))
+#+END_SRC
+
+In spark, there is a notion of a folder as a dataset. Instead of enumerating each file, simply pass the path containing all the files. This implies that the target folder should be used only for data purposes. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+library(sparklyr)
+
+sc <- spark_connect(master = "local")
+
+spark_read_csv(sc, "data-csv/")
+#+END_SRC
+
+** Schema 
+
+When reading data, spark can perform the types of the columns its reading in -- but this inference comes at a cost that could be troublesome with larger datasets. 
+
+To avoid this, we can define the schema before loading 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(spec_with_r <- sapply(read.csv("data-csv/letters1.csv",
+                               nrows = 10),
+                      class))
+
+# alternatively we can explicitly set the variable types 
+spec_explicit <- c(x = "character",
+                   y = "numeric")
+
+spark_read_csv(sc, "data-csv/",
+               columns = spec_with_r)
+#+END_SRC
+
+** Memory 
+
+Another way to read data faster is by loading less data at once. For cases in which the data is large enough that it may not be practical to load all of it in memory at once, spark can map the files without copying the data into memory. 
+
+This mapping creates a virtual table in spark, with the implication that when a query runs against the table, spark needs to read it in. In effect, spark becomes a pass-through for the data. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+mapped_csv <- spark_read_csv(sc, "data-csv/", memory = FALSE)
+#+END_SRC
+
+Once seeing the map of the data, we can choose the columns we want, and then pull them into memory with select and compute 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+mapped_csv %>%
+    select(y) %>%
+    compute(test)
+#+END_SRC
+
+** Writing Data 
+
+Some projects require writing data to an external source. Generally they try to go through R, but R becomes a bottleneck. All efforts should be made to have spark connect to the target, making the entire process occur only in spark. 
+
+If the target is in the spark cluster, this is a simple operation. 
+
+If not, then there are two options: 
+
+- spark transfer: This goes well when spark and the target are in the same datacenter or cloud provider
+- External transfer: Spark can write to disk and we could use a different program to write the files over
+
+** Copy
+
+copy_to only transfers in-memory datasets. 
+
+If we were using HDFS as storage on the cluster, we could use the hadoop command to copy files from disk into spark.
+
+#+BEGIN_SRC sh
+hadoop fs -copyFromLocal largefile.txt largefile.txt
+#+END_SRC
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+spark_read_text(sc, "largefile.txt", memory = FALSE)
+#+END_SRC
+
+** Others 
